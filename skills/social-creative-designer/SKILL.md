@@ -292,7 +292,7 @@ make_mp4(frames, f"{CREATIVES}/reel-[subject].mp4", fps=5)       # standard (200
 make_mp4(frames, f"{CREATIVES}/reel-[subject]-slow.mp4", fps=3)  # slow (333ms/frame)
 ```
 
-Requires: `pip3 install imageio[ffmpeg] --break-system-packages` (ffmpeg absent by default on WSL).
+Requires: `pip3 install "imageio[ffmpeg]==2.36.1" --break-system-packages` (ffmpeg absent by default on WSL). Pin the version to avoid unexpected breakage from unpinned installs — check PyPI for the current stable release if a newer version is needed.
 
 Always export both speeds. Send both to client and ask which they prefer.
 

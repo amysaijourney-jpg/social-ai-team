@@ -5,6 +5,10 @@ assets/
 
 # Claude Code local config — may contain personal settings or API keys
 .claude/settings.local.json
+.claude/settings.json
+
+# Client-facing onboarding docs — may contain client PII
+*-Brand-Onboarding.md
 
 # Environment and secrets
 .env
