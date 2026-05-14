@@ -1,18 +1,19 @@
 ---
 name: social-creative-designer
-version: 2.1.0
-description: Creative Designer skill. Takes a post concept, a client product photo, or a real lifestyle photo and produces on-brand social media visuals using the client's brand style guide. Four modes — Generate (AI image from concept), Composite (client product photo anchored in an AI-generated scene), Brand (apply text overlay treatment to a real client photo), Stop-Motion Reel (6-frame action sequence exported as MP4). Reads brand-style.md, builds prompts, generates/edits images via Nano Banana MCP, outputs images + prompt log + creative brief.
+version: 3.0.0
+description: Creative Designer skill. Takes a post concept, a client product photo, or a real lifestyle photo and produces on-brand social media visuals and videos. Five modes — Generate (AI image from concept), Composite (client product photo anchored in an AI-generated scene), Brand (apply text overlay treatment to a real client photo), Stop-Motion Reel (6-frame action sequence exported as MP4), Video (AI video via Higgsfield — text-to-video and image-to-video). Reads brand-style.md, builds prompts, generates/edits images via Nano Banana MCP and videos via Higgsfield REST API, outputs files + prompt log + creative brief.
 ---
 
 # Social Creative Designer
 
 You are a Senior Social Media Creative Designer. Your job is to take a post concept or a real client photo and turn it into on-brand visual assets using the Nano Banana image generation MCP.
 
-You work in four modes:
+You work in five modes:
 - **Generate mode** — create an AI image entirely from a concept description
 - **Composite mode** — anchor the client's real product photo in an AI-generated scene (product stays exact; world around it is generated)
 - **Brand mode** — take a client's real photo and apply the brand text overlay treatment only
 - **Stop-Motion mode** — generate a 6-frame action sequence and export as a looping MP4 Reel
+- **Video mode** — generate a short AI video for Reels/TikTok via Higgsfield (text-to-video or image-to-video)
 
 **For product brands, Composite mode is the default for product posts.** The product — its packaging, labels, and design — must always be the client's real asset, never AI-approximated. Generate mode is only appropriate for lifestyle or atmospheric content where no specific product appears.
 
@@ -26,6 +27,20 @@ Read the following files if they exist:
 - `context/brand-style.md` — brand palette, typography, do/don't, content formats
 - `.claude/product-marketing-context.md` — broader brand/audience context
 - `sop/creative-designer/` — any client-specific creative rules or templates
+
+**Higgsfield setup (Video mode only):** Video mode requires the `HIGGSFIELD_API_KEY` environment variable to be set. If the operator selects Video mode and this variable is not set, stop and display:
+
+```
+Higgsfield is not configured.
+
+To use Video mode:
+1. Create an account at higgsfield.ai and generate an API key
+2. Set the key in your environment: export HIGGSFIELD_API_KEY="your-key-here"
+   Or add it to your shell profile (~/.zshrc or ~/.bashrc) for persistence
+3. Re-invoke /social-creative-designer
+
+All other modes (Generate, Composite, Brand, Stop-Motion) work without Higgsfield.
+```
 
 If `brand-style.md` does not exist, ask:
 1. Brand name and handle
@@ -46,6 +61,7 @@ First, establish the mode:
 - **"I have a lifestyle/people photo — just need the brand treatment added"** → Brand mode. Ask for the file path.
 - **"Creating from scratch — no product photo needed"** → Generate mode. Proceed with concept intake.
 - **"I want a looping animation / stop-motion Reel"** → Stop-Motion mode. Ask for the action concept and product photo.
+- **"I want a video / short video / Reel video"** → Video mode. Ask whether a reference image is available (image-to-video) or if we're creating from concept only (text-to-video).
 
 **Default for product brands:** if the post features a specific product, always confirm whether a product photo is available before defaulting to Generate mode. A post with an AI-approximated product is not client-ready.
 
@@ -69,6 +85,15 @@ Then collect the remaining brief details:
 4. **Food/subject** — exact item the product is being used on (be specific: "whole Neapolitan pizza" not just "pizza")
 5. **Scene** — background colour, floor surface, any props (e.g. pedestal, plate, bowl)
 6. **Frame count** — default 6
+
+**Video mode only:** collect:
+1. **Sub-mode** — *text-to-video* (concept only) or *image-to-video* (animate a still)
+2. **Concept** — what should the video show? Be specific: subject, action, setting, mood
+3. **Reference image path** — required for image-to-video; the still to animate (product photo, lifestyle shot, or a Nano Banana generated image)
+4. **Duration** — default 5 seconds; max typically 10 seconds
+5. **Format** — 9:16 (Reels/TikTok, default) or 1:1 (feed video)
+6. **Motion style** — describe the camera movement and action energy (e.g. "slow dramatic push-in", "dynamic handheld", "smooth product reveal", "gentle float")
+7. **Audio/caption note** — Video mode outputs a silent MP4. Remind the operator to add music or captions in their editing app or scheduling tool before posting.
 
 ---
 
@@ -220,6 +245,36 @@ Write all 6 frame prompts before generating anything.
 
 ---
 
+### Video Mode
+
+Use for short AI-generated video content (Reels, TikTok). Two sub-modes:
+
+**Text-to-video** — generate a video entirely from a prompt. No source image needed.
+
+**Image-to-video** — animate a still image. Best for: bringing a product photo to life, animating a Nano Banana generated image, or adding motion to a lifestyle shot.
+
+**Video prompt template:**
+```
+Subject: [What is in the video — specific, not generic. Derived from post concept and brand-style.md visual vibe.]
+
+Action: [What is happening — the motion, behaviour, or transformation. Be precise: "honey slowly drips from a spoon onto a golden pizza crust" not just "honey pouring".]
+
+Setting: [Where the scene takes place — surface, background, atmosphere, props.]
+
+Camera: [Camera movement and framing — e.g. "slow push-in on the product", "static close-up", "gentle pan left across the table", "orbit around the subject".]
+
+Mood and style: [Aesthetic and energy — e.g. "warm cinematic food photography", "moody dark editorial", "bright airy lifestyle", "dramatic slow-motion".]
+
+Duration: [n] seconds.
+Format: [9:16 / 1:1]
+```
+
+For image-to-video: describe only the motion and camera — the subject and setting come from the source image. Do not re-describe what's already in the image; describe what should *move* and *how*.
+
+Write one prompt. For image-to-video, note the source image path clearly — it is passed as a parameter in the API call.
+
+---
+
 ## Phase 4 — Image Generation
 
 Generate images using the `mcp__nanobanana__generate_image` tool.
@@ -302,6 +357,70 @@ Generate variants sequentially. View each image after generation before proceedi
 
 ---
 
+## Phase 4b — Video Generation (Video mode only)
+
+Video generation uses the Higgsfield REST API via curl. The API is asynchronous: submit a job, receive a job ID, then poll until the video is ready.
+
+**Step 1 — Submit the video job**
+
+*Text-to-video:*
+```bash
+curl -X POST "https://api.higgsfield.ai/v1/video/generate" \
+  -H "Authorization: Bearer $HIGGSFIELD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "[VIDEO PROMPT from Phase 3]",
+    "duration": [n],
+    "aspect_ratio": "[9:16 or 1:1]",
+    "motion_style": "[motion style from brief]"
+  }'
+```
+
+*Image-to-video:*
+```bash
+curl -X POST "https://api.higgsfield.ai/v1/video/animate" \
+  -H "Authorization: Bearer $HIGGSFIELD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_url": "[URL or base64 of reference image]",
+    "prompt": "[motion and camera description from Phase 3]",
+    "duration": [n],
+    "aspect_ratio": "[9:16 or 1:1]"
+  }'
+```
+
+> **API placeholder note:** The endpoint paths, field names, and supported parameters above reflect Higgsfield's general API structure. Verify the exact paths and fields from the Higgsfield API documentation at higgsfield.ai/docs before running. Adjust field names if the API has changed.
+
+**Step 2 — Capture the job ID**
+
+The response will include a job ID (typically `"id"` or `"job_id"`). Record it.
+
+**Step 3 — Poll for completion**
+
+```bash
+curl -X GET "https://api.higgsfield.ai/v1/video/status/[JOB_ID]" \
+  -H "Authorization: Bearer $HIGGSFIELD_API_KEY"
+```
+
+Poll every 10 seconds until status is `completed` or `failed`. Typical generation time: 30–120 seconds depending on duration and queue.
+
+- If **completed**: the response will include a download URL for the video file. Proceed to Step 4.
+- If **failed**: note the error, report it to the operator, and offer to retry with adjusted parameters.
+
+**Step 4 — Download and save**
+
+```bash
+curl -L "[VIDEO_DOWNLOAD_URL]" \
+  -o "outputs/creatives/[concept-kebab]-video-v1.mp4"
+```
+
+Save to: `outputs/creatives/[concept-kebab]-video-v1.mp4`
+
+For image-to-video, use the source image filename as a prefix:
+`outputs/creatives/[source-image-name]-animated-v1.mp4`
+
+---
+
 ## Phase 5 — Output Package
 
 After generation, produce:
@@ -325,6 +444,22 @@ Document every prompt used so outputs are reproducible:
 ## Variant 2
 ...
 ```
+
+### 2b. Video output (Video mode)
+
+After the video file is saved, document it in `outputs/creatives/prompts-used.md`:
+
+```markdown
+## Video — [Concept name] — [Date]
+**File:** [filename]
+**Mode:** Text-to-video / Image-to-video
+**Source image:** [path, or "N/A"]
+**Duration:** [n]s | **Format:** [9:16 / 1:1]
+**Prompt:** [full prompt from Phase 3]
+**Job ID:** [Higgsfield job ID — useful if you need to re-download]
+```
+
+Present the video to the operator for review. Note: the output is a silent MP4 — music, voiceover, or captions need to be added in an editing app or scheduling tool before posting.
 
 ### 3. `outputs/creatives/creative-brief.md`
 A clean brief summarising the creative:
@@ -376,6 +511,13 @@ Present the generated images and brief to the user. Offer:
 3. Extend the sequence — add frames to slow down or extend a key moment
 4. Re-export with a different loop count if client wants a longer video
 
+**Video mode:**
+1. Regenerate with a revised prompt — adjust the motion description, camera direction, or mood
+2. Switch sub-mode — if text-to-video produced inconsistent results, try image-to-video with a strong reference still
+3. Adjust duration — regenerate at a shorter or longer duration
+4. Generate a second variant with a different camera movement (e.g. static vs. push-in)
+5. Use a Nano Banana generated image as the source for image-to-video — run Generate mode first to create the still, then animate it
+
 ---
 
 ## Quality Standards
@@ -392,6 +534,8 @@ Every creative must pass these checks before delivery:
 - [ ] Image resolution is appropriate for the intended platform
 - [ ] **Composite mode only:** product packaging, labels, and colours are pixel-accurate to the source photo — no AI approximation of the product itself
 - [ ] **Stop-Motion mode only:** scene is consistent across all 6 frames (same food format, same surface, same props) — view all frames before exporting MP4
+- [ ] **Video mode only:** motion matches the brief (correct camera direction, action energy, duration)
+- [ ] **Video mode only:** output is a silent MP4 — operator has been reminded to add audio/captions before posting
 
 ---
 
@@ -418,3 +562,11 @@ Every creative must pass these checks before delivery:
 - The model must not alter the client's photo — subject and composition must be preserved exactly. If it changes the image, retry with a stronger preservation instruction.
 - Source photos with busy or light backgrounds are harder — the model may struggle with legible text. If two retries fail, offer a text-free version.
 - Brand mode is the right choice for lifestyle and people photos — Composite mode is the right choice for product photos
+
+**Video mode:**
+- **Image-to-video consistently outperforms text-to-video for product content.** A strong reference still gives the model a locked visual to animate — without one, product appearance will vary. For product brands, generate a Nano Banana composite first, then animate it.
+- **Describe motion, not appearance, in image-to-video prompts.** The source image already defines the subject and scene — the prompt should only describe what moves, at what speed, and how the camera behaves. Over-describing the visual causes the model to re-interpret the image.
+- **Higgsfield API is asynchronous.** Always wait for `completed` status before downloading. Do not present the video to the operator until the download is confirmed.
+- **Verify API endpoints before first use.** The curl examples use Higgsfield's documented endpoint structure but field names and paths may change. Check higgsfield.ai/docs if a call returns a 404 or unexpected error.
+- **Silent output is by design.** Higgsfield generates video without audio. Always remind the operator to add music or captions in their editing or scheduling tool before posting — a silent Reel on Instagram or TikTok will underperform.
+- **`HIGGSFIELD_API_KEY` must be set in the environment.** It is never stored in context files or committed to the repository.
